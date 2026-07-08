@@ -8,6 +8,7 @@ import {
   parseVideo,
 } from '../lib/api';
 import { PLATFORMS, PLATFORM_LABELS, type PlatformId } from '../lib/platforms';
+import PlatformIcon from './PlatformIcon';
 
 function platformLabel(id: string): string {
   return PLATFORM_LABELS[id] ?? id;
@@ -53,7 +54,8 @@ function ResultCard({ data }: { data: VideoData }) {
         )}
         <div className="min-w-0 flex-1 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
+              <PlatformIcon id={data.platform} size={14} />
               {platformLabel(data.platform)}
             </span>
             <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">
@@ -198,7 +200,7 @@ function ResultCard({ data }: { data: VideoData }) {
 }
 
 export default function ParseForm() {
-  const [platform, setPlatform] = useState<PlatformId>('auto');
+  const [platform, setPlatform] = useState<PlatformId>('douyin');
   const [url, setUrl] = useState('');
   const [cookie, setCookie] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -241,7 +243,7 @@ export default function ParseForm() {
           setError(res.msg || '解析失败，请检查链接后重试');
         }
       } catch {
-        setError(`无法连接 API 服务（${getApiBase()}），请确认后端已启动`);
+        setError(`无法连接 API 服务，请确认后端已启动`);
       } finally {
         setLoading(false);
       }
@@ -262,21 +264,25 @@ export default function ParseForm() {
     <div className="w-full max-w-2xl space-y-8">
       {/* Platform filter */}
       <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="选择平台">
-        {PLATFORMS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => setPlatform(p.id)}
-            aria-pressed={platform === p.id}
-            className={`cursor-pointer rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 ${
-              platform === p.id
-                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:ring-slate-600'
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
+        {PLATFORMS.map((p) => {
+          const selected = platform === p.id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setPlatform(p.id)}
+              aria-pressed={selected}
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 ${
+                selected
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                  : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:ring-slate-600'
+              }`}
+            >
+              <PlatformIcon id={p.id} size={16} />
+              {p.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Form */}
