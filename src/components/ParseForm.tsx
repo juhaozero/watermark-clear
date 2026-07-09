@@ -3,6 +3,7 @@ import {
   type ApiResponse,
   type VideoData,
   checkHealth,
+  downloadFile,
   formatCount,
   getApiBase,
   parseVideo,
@@ -22,6 +23,67 @@ function DownloadIcon() {
   );
 }
 
+function buildDownloadFilename(title: string, suffix?: string): string {
+  const base = title.trim() || 'download';
+  return suffix ? `${base}_${suffix}` : base;
+}
+
+function DownloadButton({
+  url,
+  label,
+  filename,
+  cookie,
+  variant = 'primary',
+}: {
+  url: string;
+  label: string;
+  filename: string;
+  cookie?: string;
+  variant?: 'primary' | 'outline';
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleClick = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await downloadFile({ url, filename, cookie });
+    } catch {
+      setError('下载失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const className =
+    variant === 'outline'
+      ? 'inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors duration-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700'
+      : 'inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 dark:focus-visible:ring-offset-slate-900';
+
+  return (
+    <div className="inline-flex flex-col gap-1">
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={loading}
+      className={className}
+    >
+      {loading ? (
+        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+      ) : (
+        <DownloadIcon />
+      )}
+      {loading ? '下载中…' : label}
+    </button>
+    {error && <span className="text-xs text-red-500">{error}</span>}
+    </div>
+  );
+}
+
 function ExternalIcon() {
   return (
     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
@@ -30,7 +92,8 @@ function ExternalIcon() {
   );
 }
 
-function ResultCard({ data }: { data: VideoData }) {
+function ResultCard({ data, cookie }: { data: VideoData; cookie?: string }) {
+  const title = data.title?.trim() || '无标题';
   const downloads = [
     ...(data.url ? [{ url: data.url, label: '原画' }] : []),
     ...(data.video_backup?.map((b) => ({
@@ -38,6 +101,7 @@ function ResultCard({ data }: { data: VideoData }) {
       label: b.label ?? b.quality ?? '备用',
     })) ?? []),
   ];
+  const multiDownload = downloads.length > 1;
 
   return (
     <article className="animate-fade-in overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800/50">
@@ -45,7 +109,7 @@ function ResultCard({ data }: { data: VideoData }) {
         {data.cover && (
           <div className="shrink-0">
             <img
-              src={data.cover}
+              src={data.cover} referrerPolicy="no-referrer"
               alt={data.title ? `${data.title} 封面` : '视频封面'}
               className="h-40 w-full rounded-xl object-cover sm:h-36 sm:w-36"
               loading="lazy"
@@ -74,7 +138,7 @@ function ResultCard({ data }: { data: VideoData }) {
             <div className="flex items-center gap-2">
               {data.author.avatar && (
                 <img
-                  src={data.author.avatar}
+                  src={data.author.avatar} referrerPolicy="no-referrer"
                   alt=""
                   className="h-6 w-6 rounded-full"
                   loading="lazy"
@@ -103,16 +167,13 @@ function ResultCard({ data }: { data: VideoData }) {
           </p>
           <div className="flex flex-wrap gap-2">
             {downloads.map((d, i) => (
-              <a
+              <DownloadButton
                 key={`${d.url}-${i}`}
-                href={d.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 dark:focus-visible:ring-offset-slate-900"
-              >
-                <DownloadIcon />
-                {d.label}
-              </a>
+                url={d.url}
+                label={d.label}
+                filename={buildDownloadFilename(title, multiDownload ? d.label : undefined)}
+                cookie={cookie}
+              />
             ))}
           </div>
         </div>
@@ -156,7 +217,7 @@ function ResultCard({ data }: { data: VideoData }) {
                 className="group relative aspect-square cursor-pointer overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-700"
               >
                 <img
-                  src={src}
+                  src={src} referrerPolicy="no-referrer"
                   alt={`图集第 ${i + 1} 张`}
                   className="h-full w-full object-cover transition-opacity duration-200 group-hover:opacity-80"
                   loading="lazy"
@@ -183,15 +244,13 @@ function ResultCard({ data }: { data: VideoData }) {
                 </p>
               )}
             </div>
-            <a
-              href={data.music.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors duration-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
-            >
-              <DownloadIcon />
-              下载
-            </a>
+            <DownloadButton
+              url={data.music.url}
+              label="下载"
+              filename={buildDownloadFilename(data.music.title?.trim() || title)}
+              cookie={cookie}
+              variant="outline"
+            />
           </div>
         </div>
       )}
@@ -355,7 +414,7 @@ export default function ParseForm() {
                   className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-500"
                 />
               </div>
-              <div>
+              {/* <div>
                 <label htmlFor="api-key" className="mb-1 block text-sm text-slate-600 dark:text-slate-400">
                   API Key（可选）
                 </label>
@@ -369,7 +428,7 @@ export default function ParseForm() {
                   autoComplete="off"
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-500"
                 />
-              </div>
+              </div> */}
             </div>
           )}
         </div>
@@ -393,7 +452,7 @@ export default function ParseForm() {
       )}
 
       {/* Result */}
-      {result && <ResultCard data={result} />}
+      {result && <ResultCard data={result} cookie={cookie || undefined} />}
     </div>
   );
 }

@@ -27,6 +27,7 @@ npm run dev
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `PUBLIC_API_BASE_URL` | `http://localhost:8080` | 后端 API 地址 |
+| `PUBLIC_DOWNLOAD_SERVER_MAX_MB` | `50` | 服务端代理下载体积上限（MB），超过则浏览器直链下载；`0` 表示始终本地下载 |
 
 ## 构建
 
