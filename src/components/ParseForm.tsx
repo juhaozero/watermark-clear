@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type ClipboardEvent, type FormEvent } from 'react';
 import {
   type ApiResponse,
   type VideoData,
@@ -9,7 +9,24 @@ import {
   parseVideo,
 } from '../lib/api';
 import { PLATFORMS, PLATFORM_LABELS, type PlatformId } from '../lib/platforms';
+import { detectPlatformFromUrl, extractVideoUrl } from '../lib/url';
 import PlatformIcon from './PlatformIcon';
+
+function applyPastedShareText(
+  text: string,
+  platform: PlatformId,
+  setUrl: (url: string) => void,
+  setPlatform: (id: PlatformId) => void,
+) {
+  const extracted = extractVideoUrl(text, platform);
+  if (!extracted) {
+    setUrl(text.trim());
+    return;
+  }
+  setUrl(extracted);
+  const detected = detectPlatformFromUrl(extracted);
+  if (detected) setPlatform(detected);
+}
 
 function platformLabel(id: string): string {
   return PLATFORM_LABELS[id] ?? id;
@@ -32,13 +49,11 @@ function DownloadButton({
   url,
   label,
   filename,
-  cookie,
   variant = 'primary',
 }: {
   url: string;
   label: string;
   filename: string;
-  cookie?: string;
   variant?: 'primary' | 'outline';
 }) {
   const [loading, setLoading] = useState(false);
@@ -48,7 +63,7 @@ function DownloadButton({
     setLoading(true);
     setError(null);
     try {
-      await downloadFile({ url, filename, cookie });
+      await downloadFile({ url, filename });
     } catch {
       setError('下载失败');
     } finally {
@@ -92,7 +107,7 @@ function ExternalIcon() {
   );
 }
 
-function ResultCard({ data, cookie }: { data: VideoData; cookie?: string }) {
+function ResultCard({ data }: { data: VideoData }) {
   const title = data.title?.trim() || '无标题';
   const downloads = [
     ...(data.url ? [{ url: data.url, label: '原画' }] : []),
@@ -172,7 +187,6 @@ function ResultCard({ data, cookie }: { data: VideoData; cookie?: string }) {
                 url={d.url}
                 label={d.label}
                 filename={buildDownloadFilename(title, multiDownload ? d.label : undefined)}
-                cookie={cookie}
               />
             ))}
           </div>
@@ -248,7 +262,6 @@ function ResultCard({ data, cookie }: { data: VideoData; cookie?: string }) {
               url={data.music.url}
               label="下载"
               filename={buildDownloadFilename(data.music.title?.trim() || title)}
-              cookie={cookie}
               variant="outline"
             />
           </div>
@@ -279,18 +292,20 @@ export default function ParseForm() {
       setError(null);
       setResult(null);
 
-      const trimmed = url.trim();
-      if (!trimmed) {
-        setError('请输入有效的视频链接');
+      const extracted = extractVideoUrl(url, platform);
+      if (!extracted) {
+        setError('未找到有效链接，请粘贴包含视频地址的分享内容');
         return;
       }
 
       const selected = PLATFORMS.find((p) => p.id === platform)!;
+      if (extracted !== url.trim()) setUrl(extracted);
+
       setLoading(true);
 
       try {
         const res: ApiResponse = await parseVideo({
-          url: trimmed,
+          url: extracted,
           endpoint: selected.endpoint,
           cookie: cookie || undefined,
           apiKey: apiKey || undefined,
@@ -313,11 +328,21 @@ export default function ParseForm() {
   const handlePaste = useCallback(async () => {
     try {
       const text = await navigator.clipboard.readText();
-      if (text) setUrl(text.trim());
+      if (text) applyPastedShareText(text, platform, setUrl, setPlatform);
     } catch {
       /* clipboard denied */
     }
-  }, []);
+  }, [platform]);
+
+  const handleInputPaste = useCallback(
+    (e: ClipboardEvent<HTMLInputElement>) => {
+      const text = e.clipboardData.getData('text');
+      if (!text) return;
+      e.preventDefault();
+      applyPastedShareText(text, platform, setUrl, setPlatform);
+    },
+    [platform],
+  );
 
   return (
     <div className="w-full max-w-2xl space-y-8">
@@ -352,11 +377,12 @@ export default function ParseForm() {
           </label>
           <input
             id="video-url"
-            type="url"
+            type="text"
             inputMode="url"
-            placeholder="粘贴短视频分享链接…"
+            placeholder="粘贴分享文案或视频链接…"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
+            onPaste={handleInputPaste}
             disabled={loading}
             autoComplete="off"
             className="w-full rounded-2xl border border-slate-200 bg-white py-4 pl-5 pr-24 text-base text-slate-900 placeholder:text-slate-400 transition-colors duration-200 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-blue-400"
@@ -452,7 +478,7 @@ export default function ParseForm() {
       )}
 
       {/* Result */}
-      {result && <ResultCard data={result} cookie={cookie || undefined} />}
+      {result && <ResultCard data={result} />}
     </div>
   );
 }

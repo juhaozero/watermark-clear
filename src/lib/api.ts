@@ -110,17 +110,6 @@ export function formatCount(n?: number): string {
 export interface DownloadOptions {
   url: string;
   filename?: string;
-  cookie?: string;
-  referer?: string;
-}
-
-/** 走服务端代理下载的最大文件体积（字节），0 表示始终本地下载 */
-export function getDownloadServerMaxBytes(): number {
-  const raw = import.meta.env.PUBLIC_DOWNLOAD_SERVER_MAX_MB;
-  if (raw === undefined || raw === '') return 50 * 1024 * 1024;
-  const mb = Number(raw);
-  if (!Number.isFinite(mb) || mb < 0) return 50 * 1024 * 1024;
-  return Math.floor(mb * 1024 * 1024);
 }
 
 function guessExtension(url: string): string {
@@ -151,98 +140,23 @@ function saveBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(objectUrl);
 }
 
-function parseFilenameFromDisposition(header: string | null): string | null {
-  if (!header) return null;
-  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
-  if (utf8) return decodeURIComponent(utf8[1]);
-  const basic = /filename="([^"]+)"/i.exec(header) ?? /filename=([^;\s]+)/i.exec(header);
-  return basic ? basic[1] : null;
+async function downloadDirect(options: DownloadOptions): Promise<void> {
+  const name = buildLocalFilename(options.filename, options.url);
+  const res = await fetch(options.url, { referrerPolicy: 'no-referrer' });
+  if (!res.ok) throw new Error('直链下载失败');
+  saveBlob(await res.blob(), name);
 }
 
-function parseContentLength(header: string | null): number | null {
-  if (!header) return null;
-  const size = Number(header);
-  return Number.isFinite(size) && size >= 0 ? size : null;
+/** CORS 拦截时降级：新标签页打开视频，用户可右键另存为 */
+function openVideoUrl(url: string): void {
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
-function buildDownloadQuery(options: DownloadOptions): URLSearchParams {
-  const { url, filename, cookie, referer } = options;
-  const params = new URLSearchParams({ url });
-  if (filename?.trim()) params.set('filename', filename.trim());
-  if (cookie?.trim()) params.set('cookie', cookie.trim());
-  if (referer?.trim()) params.set('referer', referer.trim());
-  return params;
-}
-
-async function probeFileSizeViaServer(options: DownloadOptions): Promise<number | null> {
-  const params = buildDownloadQuery(options);
-  try {
-    const res = await fetch(`${getApiBase()}/api/download?${params}`, { method: 'HEAD' });
-    if (!res.ok) return null;
-    return parseContentLength(res.headers.get('Content-Length'));
-  } catch {
-    return null;
-  }
-}
-
-async function probeFileSizeDirect(url: string): Promise<number | null> {
-  try {
-    const res = await fetch(url, { method: 'HEAD', referrerPolicy: 'no-referrer' });
-    if (!res.ok) return null;
-    return parseContentLength(res.headers.get('Content-Length'));
-  } catch {
-    return null;
-  }
-}
-
-async function resolveFileSize(options: DownloadOptions): Promise<number | null> {
-  return (await probeFileSizeViaServer(options)) ?? (await probeFileSizeDirect(options.url));
-}
-
-async function downloadFileViaServer(options: DownloadOptions): Promise<void> {
-  const params = buildDownloadQuery(options);
-  const res = await fetch(`${getApiBase()}/api/download?${params}`);
-  if (!res.ok) throw new Error('下载失败');
-
-  const blob = await res.blob();
-  const name =
-    parseFilenameFromDisposition(res.headers.get('Content-Disposition')) ??
-    options.filename?.trim() ??
-    'download';
-  saveBlob(blob, name);
-}
-
-function triggerAnchorDownload(url: string, filename: string) {
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.rel = 'noopener noreferrer';
-  anchor.style.display = 'none';
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-}
-
-async function downloadFileLocally(url: string, filename?: string): Promise<void> {
-  const name = buildLocalFilename(filename, url);
-  // 大文件走本地下载：用动态 <a> 交给浏览器原生下载，避免 fetch 整文件进内存
-  triggerAnchorDownload(url, name);
-}
-
+/** 先尝试浏览器直链保存；跨域失败则新标签页打开视频 */
 export async function downloadFile(options: DownloadOptions): Promise<void> {
-  const maxBytes = getDownloadServerMaxBytes();
-
-  if (maxBytes === 0) {
-    await downloadFileLocally(options.url, options.filename);
-    return;
+  try {
+    await downloadDirect(options);
+  } catch {
+    openVideoUrl(options.url);
   }
-
-  const size = await resolveFileSize(options);
-
-  if (size == null || size > maxBytes) {
-    await downloadFileLocally(options.url, options.filename);
-    return;
-  }
-
-  await downloadFileViaServer(options);
 }
