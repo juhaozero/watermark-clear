@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ClipboardEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type ClipboardEvent, type FormEvent, type ReactNode } from 'react';
 import {
   type ApiResponse,
   type VideoData,
@@ -18,11 +18,13 @@ function applyPastedShareText(
   setUrl: (url: string) => void,
   setPlatform: (id: PlatformId) => void,
 ) {
+  // 从文本中提取视频链接
   const extracted = extractVideoUrl(text, platform);
   if (!extracted) {
-    setUrl(text.trim());
+    setUrl(text.trim()); // 如果提取失败，则设置为文本的原始值
     return;
   }
+  console.log('提取到的链接:', extracted);
   setUrl(extracted);
   const detected = detectPlatformFromUrl(extracted);
   if (detected) setPlatform(detected);
@@ -107,6 +109,32 @@ function ExternalIcon() {
   );
 }
 
+function ResultSection({
+  title,
+  children,
+  tone = 'default',
+}: {
+  title: string;
+  children: ReactNode;
+  tone?: 'default' | 'accent' | 'muted';
+}) {
+  const toneClass =
+    tone === 'accent'
+      ? 'bg-slate-50/80 dark:bg-slate-900/40'
+      : tone === 'muted'
+        ? 'bg-white dark:bg-slate-800/30'
+        : 'bg-white dark:bg-transparent';
+
+  return (
+    <section className={`border-t border-slate-100 px-6 py-5 sm:px-7 sm:py-6 dark:border-slate-700/80 ${toneClass}`}>
+      <p className="mb-4 text-[11px] font-semibold tracking-[0.14em] text-slate-400 dark:text-slate-500">
+        {title}
+      </p>
+      {children}
+    </section>
+  );
+}
+
 function ResultCard({ data }: { data: VideoData }) {
   const title = data.title?.trim() || '无标题';
   const downloads = [
@@ -117,58 +145,71 @@ function ResultCard({ data }: { data: VideoData }) {
     })) ?? []),
   ];
   const multiDownload = downloads.length > 1;
+  const hasMeta = Boolean(data.author?.name || data.stats);
 
   return (
-    <article className="animate-fade-in overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800/50">
-      <div className="flex flex-col gap-6 p-6 sm:flex-row">
+    <article className="animate-fade-in overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/50 dark:border-slate-700/80 dark:bg-slate-800/50 dark:shadow-none">
+      {/* 主信息区 */}
+      <div className="flex flex-col gap-5 p-6 sm:flex-row sm:items-start sm:gap-7 sm:p-7">
         {data.cover && (
-          <div className="shrink-0">
+          <div className="h-48 w-full shrink-0 self-start overflow-hidden rounded-2xl bg-slate-100 ring-1 ring-slate-200/60 sm:h-40 sm:w-40 dark:bg-slate-700 dark:ring-slate-600/50">
             <img
-              src={data.cover} referrerPolicy="no-referrer"
+              src={data.cover}
+              referrerPolicy="no-referrer"
               alt={data.title ? `${data.title} 封面` : '视频封面'}
-              className="h-40 w-full rounded-xl object-cover sm:h-36 sm:w-36"
+              className="h-full w-full object-cover"
               loading="lazy"
             />
           </div>
         )}
-        <div className="min-w-0 flex-1 space-y-3">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
               <PlatformIcon id={data.platform} size={14} />
               {platformLabel(data.platform)}
             </span>
-            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-500 dark:bg-slate-700 dark:text-slate-400">
               {data.type === 'video' ? '视频' : data.type === 'image' ? '图集' : data.type}
             </span>
           </div>
-          <h2 className="text-lg font-semibold leading-snug text-slate-900 dark:text-white">
+
+          <h2 className="mt-3.5 text-xl font-semibold leading-snug tracking-tight text-slate-900 dark:text-white">
             {data.title || '无标题'}
           </h2>
+
           {data.desc && (
-            <p className="line-clamp-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+            <p className="mt-2.5 line-clamp-3 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
               {data.desc}
             </p>
           )}
-          {data.author?.name && (
-            <div className="flex items-center gap-2">
-              {data.author.avatar && (
-                <img
-                  src={data.author.avatar} referrerPolicy="no-referrer"
-                  alt=""
-                  className="h-6 w-6 rounded-full"
-                  loading="lazy"
-                />
+
+          {hasMeta && (
+            <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-4 dark:border-slate-700/80">
+              {data.author?.name && (
+                <div className="flex items-center gap-2.5">
+                  {data.author.avatar && (
+                    <img
+                      src={data.author.avatar}
+                      referrerPolicy="no-referrer"
+                      alt=""
+                      className="h-7 w-7 rounded-full ring-2 ring-white dark:ring-slate-800"
+                      loading="lazy"
+                    />
+                  )}
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                    {data.author.name}
+                  </span>
+                </div>
               )}
-              <span className="text-sm text-slate-600 dark:text-slate-400">{data.author.name}</span>
-            </div>
-          )}
-          {data.stats && (
-            <div className="flex gap-4 text-xs text-slate-500 dark:text-slate-400">
-              {data.stats.play_count != null && (
-                <span>播放 {formatCount(data.stats.play_count)}</span>
-              )}
-              {data.stats.like_count != null && (
-                <span>点赞 {formatCount(data.stats.like_count)}</span>
+              {data.stats && (
+                <div className="flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
+                  {data.stats.play_count != null && (
+                    <span>播放 {formatCount(data.stats.play_count)}</span>
+                  )}
+                  {data.stats.like_count != null && (
+                    <span>点赞 {formatCount(data.stats.like_count)}</span>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -176,11 +217,8 @@ function ResultCard({ data }: { data: VideoData }) {
       </div>
 
       {downloads.length > 0 && (
-        <div className="border-t border-slate-100 px-6 py-4 dark:border-slate-700">
-          <p className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            下载
-          </p>
-          <div className="flex flex-wrap gap-2">
+        <ResultSection title="下载" tone="accent">
+          <div className="flex flex-wrap gap-2.5">
             {downloads.map((d, i) => (
               <DownloadButton
                 key={`${d.url}-${i}`}
@@ -190,48 +228,59 @@ function ResultCard({ data }: { data: VideoData }) {
               />
             ))}
           </div>
-        </div>
+        </ResultSection>
+      )}
+
+      {data.url && (
+        <ResultSection title="媒体地址" tone="muted">
+          <a
+            href={data.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group flex items-start gap-3 rounded-xl bg-slate-50 px-3.5 py-3 text-sm text-slate-600 transition-colors duration-200 hover:bg-slate-100 dark:bg-slate-900/50 dark:text-slate-300 dark:hover:bg-slate-900"
+          >
+            <span className="min-w-0 flex-1 break-all leading-relaxed">{data.url}</span>
+            <ExternalIcon />
+          </a>
+        </ResultSection>
       )}
 
       {data.parts && data.parts.length > 0 && (
-        <div className="border-t border-slate-100 px-6 py-4 dark:border-slate-700">
-          <p className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            分 P 列表
-          </p>
-          <ul className="space-y-2">
+        <ResultSection title="分 P 列表" tone="muted">
+          <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-100 dark:divide-slate-700/80 dark:border-slate-700/80">
             {data.parts.map((part, i) => (
               <li key={part.url ?? i}>
                 <a
                   href={part.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors duration-200 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700/50"
+                  className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-slate-700 transition-colors duration-200 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700/40"
                 >
                   <span className="truncate">{part.title ?? `P${i + 1}`}</span>
-                  <ExternalIcon />
+                  <span className="shrink-0 text-slate-400">
+                    <ExternalIcon />
+                  </span>
                 </a>
               </li>
             ))}
           </ul>
-        </div>
+        </ResultSection>
       )}
 
       {data.images && data.images.length > 0 && (
-        <div className="border-t border-slate-100 px-6 py-4 dark:border-slate-700">
-          <p className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            图集 ({data.images.length})
-          </p>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+        <ResultSection title={`图集 · ${data.images.length}`} tone="muted">
+          <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 sm:gap-3">
             {data.images.map((src, i) => (
               <a
                 key={src}
                 href={src}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group relative aspect-square cursor-pointer overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-700"
+                className="group relative aspect-square cursor-pointer overflow-hidden rounded-xl bg-slate-100 ring-1 ring-slate-200/60 transition-transform duration-200 hover:scale-[1.02] dark:bg-slate-700 dark:ring-slate-600/40"
               >
                 <img
-                  src={src} referrerPolicy="no-referrer"
+                  src={src}
+                  referrerPolicy="no-referrer"
                   alt={`图集第 ${i + 1} 张`}
                   className="h-full w-full object-cover transition-opacity duration-200 group-hover:opacity-80"
                   loading="lazy"
@@ -239,21 +288,18 @@ function ResultCard({ data }: { data: VideoData }) {
               </a>
             ))}
           </div>
-        </div>
+        </ResultSection>
       )}
 
       {data.music?.url && (
-        <div className="border-t border-slate-100 px-6 py-4 dark:border-slate-700">
-          <p className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            背景音乐
-          </p>
-          <div className="flex items-center justify-between gap-3">
+        <ResultSection title="背景音乐" tone="muted">
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3.5 dark:border-slate-700/80 dark:bg-slate-900/40">
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
                 {data.music.title ?? '未知曲目'}
               </p>
               {data.music.author && (
-                <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
                   {data.music.author}
                 </p>
               )}
@@ -265,7 +311,7 @@ function ResultCard({ data }: { data: VideoData }) {
               variant="outline"
             />
           </div>
-        </div>
+        </ResultSection>
       )}
     </article>
   );
@@ -345,7 +391,7 @@ export default function ParseForm() {
   );
 
   return (
-    <div className="w-full max-w-2xl space-y-8">
+    <div className="w-full max-w-2xl space-y-10">
       {/* Platform filter */}
       <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="选择平台">
         {PLATFORMS.map((p) => {
