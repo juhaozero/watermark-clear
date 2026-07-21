@@ -354,7 +354,6 @@ export default function ParseForm() {
           url: extracted,
           endpoint: selected.endpoint,
           cookie: cookie || undefined,
-          apiKey: apiKey || undefined,
         });
 
         if (res.code === 200 && res.data) {
@@ -391,7 +390,7 @@ export default function ParseForm() {
   );
 
   return (
-    <div className="w-full max-w-2xl space-y-10">
+    <div className="w-full min-w-0 max-w-2xl space-y-10">
       {/* Platform filter */}
       <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="选择平台">
         {PLATFORMS.map((p) => {
@@ -508,7 +507,7 @@ export default function ParseForm() {
 
       {/* API status */}
       {apiOnline === false && (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+        <p className="w-full max-w-full break-words rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
           API 服务未响应（{getApiBase()}），请先启动后端服务
         </p>
       )}
@@ -517,7 +516,7 @@ export default function ParseForm() {
       {error && (
         <p
           role="alert"
-          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+          className="w-full max-w-full overflow-hidden break-words rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-relaxed text-red-700 [overflow-wrap:anywhere] dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
         >
           {error}
         </p>

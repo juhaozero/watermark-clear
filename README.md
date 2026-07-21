@@ -28,6 +28,7 @@ npm run dev
 |------|--------|------|
 | `PUBLIC_API_BASE_URL` | `http://localhost:8080` | 后端 API 地址 |
 | `BASE_PATH` | `/` | 部署子路径，如 `/watermark/` |
+| `PUBLIC_SITE_URL` | `http://localhost:4321` | 站点完整域名（sitemap / SEO 必需） |
 
 ## 构建
 
@@ -46,6 +47,8 @@ npm run preview
 - 解析结果展示：封面、作者、下载、分 P、图集、背景音乐
 - 浅色 / 深色主题切换
 - API 健康状态检测
+- SEO：Open Graph / Twitter Card / JSON-LD / canonical
+- 构建时生成 `sitemap-index.xml` 与 `robots.txt`
 
 ## 项目结构
 

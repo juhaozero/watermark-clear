@@ -1,12 +1,37 @@
 ---
 import '../styles/global.css';
+import {
+  DEFAULT_DESCRIPTION,
+  DEFAULT_KEYWORDS,
+  SITE_NAME,
+  buildWebAppJsonLd,
+  resolveTitle,
+  type SeoProps,
+} from '../lib/seo';
 
-interface Props {
-  title?: string;
-  description?: string;
-}
+interface Props extends SeoProps {}
 
-const { title = 'Parse Video', description = '视频链接解析，一键获取无水印资源' } = Astro.props;
+const {
+  title,
+  description = DEFAULT_DESCRIPTION,
+  keywords = DEFAULT_KEYWORDS,
+  image,
+  type = 'website',
+  noindex = false,
+} = Astro.props;
+
+const pageTitle = resolveTitle(title);
+const canonicalURL = new URL(Astro.url.pathname, Astro.site ?? Astro.url);
+const ogImage = image
+  ? new URL(image, Astro.site ?? Astro.url).href
+  : new URL(`${import.meta.env.BASE_URL}favicon.svg`.replace(/\/{2,}/g, '/'), Astro.site ?? Astro.url).href;
+
+const jsonLd = buildWebAppJsonLd({
+  name: SITE_NAME,
+  description,
+  url: canonicalURL.href,
+  image: ogImage,
+});
 ---
 
 <!doctype html>
@@ -14,9 +39,41 @@ const { title = 'Parse Video', description = '视频链接解析，一键获取�
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- Primary SEO -->
+    <title>{pageTitle}</title>
     <meta name="description" content={description} />
+    <meta name="keywords" content={keywords} />
+    <meta name="author" content={SITE_NAME} />
+    <meta name="robots" content={noindex ? 'noindex, nofollow' : 'index, follow'} />
+    <link rel="canonical" href={canonicalURL.href} />
+    <link rel="sitemap" href={`${import.meta.env.BASE_URL}sitemap-index.xml`} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content={type} />
+    <meta property="og:site_name" content={SITE_NAME} />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalURL.href} />
+    <meta property="og:image" content={ogImage} />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    <!-- Theme & icons -->
+    <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="color-scheme" content="light dark" />
     <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
-    <title>{title}</title>
+
+    <!-- Structured Data -->
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+
     <script is:inline>
       (function () {
         const stored = localStorage.getItem('theme');
