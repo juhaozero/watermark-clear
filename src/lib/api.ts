@@ -32,7 +32,7 @@ export interface VideoPart {
 export interface VideoData {
   platform: string;
   type: string;
-  title: string;
+  title?: string;
   desc?: string;
   author?: Author;
   cover?: string;
@@ -55,6 +55,7 @@ export interface ApiResponse {
 export interface ParseOptions {
   url: string;
   endpoint: string;
+  method?: 'GET' | 'POST';
   cookie?: string;
   apiKey?: string;
 }
@@ -65,29 +66,53 @@ export function getApiBase(): string {
 }
 
 export async function parseVideo(options: ParseOptions): Promise<ApiResponse> {
-  const { url, endpoint, cookie, apiKey } = options;
+  const { url, endpoint, method = 'POST', cookie, apiKey } = options;
   const base = getApiBase();
   const target = `${base}${endpoint}`;
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+  const headers: Record<string, string> = {};
   if (apiKey?.trim()) {
     headers['X-API-Key'] = apiKey.trim();
   }
 
-  const body: Record<string, string> = { url: url.trim() };
-  if (cookie?.trim()) {
-    body.cookie = cookie.trim();
+  let res: Response;
+  try {
+    if (method === 'GET') {
+      const params = new URLSearchParams({ url: url.trim() });
+      if (cookie?.trim()) params.set('cookie', cookie.trim());
+      res = await fetch(`${target}?${params.toString()}`, {
+        method: 'GET',
+        headers,
+      });
+    } else {
+      headers['Content-Type'] = 'application/json';
+      const body: Record<string, string> = { url: url.trim() };
+      if (cookie?.trim()) body.cookie = cookie.trim();
+      res = await fetch(target, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+    }
+  } catch {
+    throw new Error('NETWORK');
   }
 
-  const res = await fetch(target, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
+  let json: ApiResponse;
+  try {
+    json = (await res.json()) as ApiResponse;
+  } catch {
+    throw new Error(res.ok ? 'INVALID_JSON' : `HTTP_${res.status}`);
+  }
 
-  const json = (await res.json()) as ApiResponse;
+  if (!res.ok && (json.code == null || json.code === 200)) {
+    return {
+      code: res.status,
+      msg: json.msg || `服务返回错误（${res.status}）`,
+      data: json.data,
+    };
+  }
+
   return json;
 }
 
@@ -111,6 +136,17 @@ export function formatCount(n?: number): string {
 export interface DownloadOptions {
   url: string;
   filename?: string;
+}
+
+export interface FetchedDownload {
+  blob: Blob;
+  filename: string;
+}
+
+export interface ZipDownloadOptions {
+  files: DownloadOptions[];
+  zipName?: string;
+  onProgress?: (done: number, total: number) => void;
 }
 
 function guessExtension(url: string, fallback = '.mp4'): string {
@@ -204,19 +240,47 @@ async function convertToJpeg(blob: Blob, quality = 0.92): Promise<Blob> {
   return jpeg;
 }
 
+function sanitizeFilename(name: string): string {
+  const cleaned = name
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\.+/, '')
+    .slice(0, 120);
+  return cleaned || 'download';
+}
+
+function uniqueZipEntryName(name: string, used: Set<string>): string {
+  let candidate = sanitizeFilename(name);
+  if (!used.has(candidate.toLowerCase())) {
+    used.add(candidate.toLowerCase());
+    return candidate;
+  }
+  const extMatch = candidate.match(/(\.[a-z0-9]+)$/i);
+  const ext = extMatch?.[1] ?? '';
+  const stem = ext ? candidate.slice(0, -ext.length) : candidate;
+  let i = 2;
+  while (used.has(`${stem}_${i}${ext}`.toLowerCase())) i += 1;
+  candidate = `${stem}_${i}${ext}`;
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
 function saveBlob(blob: Blob, filename: string) {
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = objectUrl;
-  anchor.download = filename;
+  anchor.download = sanitizeFilename(filename);
   anchor.style.display = 'none';
   document.body.appendChild(anchor);
   anchor.click();
   document.body.removeChild(anchor);
-  URL.revokeObjectURL(objectUrl);
+  // 部分浏览器立即 revoke 会导致下载中断
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2_000);
 }
 
-async function downloadDirect(options: DownloadOptions): Promise<void> {
+/** 拉取资源并做 webp→jpg 等处理，不触发保存 */
+export async function fetchDownloadBlob(options: DownloadOptions): Promise<FetchedDownload> {
   const res = await fetch(options.url, { referrerPolicy: 'no-referrer' });
   if (!res.ok) throw new Error('直链下载失败');
   let blob = await res.blob();
@@ -233,19 +297,71 @@ async function downloadDirect(options: DownloadOptions): Promise<void> {
     }
   }
 
-  saveBlob(blob, name);
+  return { blob, filename: sanitizeFilename(name) };
 }
 
-/** CORS 拦截时降级：新标签页打开视频，用户可右键另存为 */
-function openVideoUrl(url: string): void {
-  window.open(url, '_blank', 'noopener,noreferrer');
+async function downloadDirect(options: DownloadOptions): Promise<void> {
+  const { blob, filename } = await fetchDownloadBlob(options);
+  saveBlob(blob, filename);
 }
 
-/** 先尝试浏览器直链保存；跨域失败则新标签页打开视频 */
+/** CORS 拦截时降级：新标签页打开资源，用户可右键另存为 */
+function openResourceUrl(url: string): void {
+  const win = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!win) throw new Error('弹窗被拦截，请允许弹窗后重试');
+}
+
+/** 先尝试浏览器直链保存；跨域失败则新标签页打开 */
 export async function downloadFile(options: DownloadOptions): Promise<void> {
   try {
     await downloadDirect(options);
-  } catch {
-    openVideoUrl(options.url);
+  } catch (directErr) {
+    try {
+      openResourceUrl(options.url);
+    } catch (openErr) {
+      throw openErr instanceof Error
+        ? openErr
+        : directErr instanceof Error
+          ? directErr
+          : new Error('下载失败');
+    }
   }
+}
+
+export interface ZipDownloadResult {
+  ok: number;
+  failed: number;
+}
+
+/** 批量拉取后打成 zip 下载；全部失败则抛错 */
+export async function downloadAsZip(options: ZipDownloadOptions): Promise<ZipDownloadResult> {
+  const { files, onProgress } = options;
+  if (files.length === 0) throw new Error('没有可下载的文件');
+
+  const JSZip = (await import('jszip')).default;
+  const zip = new JSZip();
+  const usedNames = new Set<string>();
+  let ok = 0;
+  let failed = 0;
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    try {
+      const fetched = await fetchDownloadBlob(file);
+      const entryName = uniqueZipEntryName(fetched.filename, usedNames);
+      zip.file(entryName, fetched.blob);
+      ok += 1;
+    } catch {
+      failed += 1;
+    }
+    onProgress?.(i + 1, files.length);
+  }
+
+  if (ok === 0) throw new Error(failed > 0 ? '全部文件下载失败' : '没有可打包的文件');
+
+  const zipBlob = await zip.generateAsync({ type: 'blob' });
+  const zipName = withExtension(options.zipName || 'download', '.zip');
+  saveBlob(zipBlob, zipName);
+
+  return { ok, failed };
 }

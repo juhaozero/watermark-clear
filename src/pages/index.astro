@@ -10,31 +10,34 @@ import ThemeToggle from '../components/ThemeToggle';
   description="粘贴分享链接，一键解析抖音、快手、小红书、B站、微博、豆包等平台的无水印视频与图集，免费在线使用。"
 >
   <div class="relative flex min-h-screen flex-col">
-    <header class="flex items-center justify-end px-6 py-5 sm:px-8">
+    <header class="flex items-center justify-end px-6 py-5 sm:px-10">
       <ThemeToggle client:load />
     </header>
 
-    <main class="flex flex-1 flex-col items-center px-6 pb-16 pt-4 sm:px-8">
-      <div class="mb-12 text-center">
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
+    <main class="flex flex-1 flex-col items-center px-5 pb-20 pt-6 sm:px-8 sm:pt-10">
+      <div class="mb-14 max-w-xl animate-fade-in-slow text-center sm:mb-16">
+        <p class="mb-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-600/80 dark:text-sky-400/80">
+          无水印解析
+        </p>
+        <h1 class="font-display text-[2.35rem] font-semibold leading-[1.15] tracking-tight text-slate-900 sm:text-5xl dark:text-white">
           Parse Video
         </h1>
-        <p class="mt-3 max-w-md text-base leading-relaxed text-slate-600 dark:text-slate-400">
+        <p class="mx-auto mt-4 max-w-sm text-[15px] leading-relaxed text-slate-500 dark:text-slate-400">
           粘贴分享链接，一键解析无水印视频与图集
         </p>
       </div>
 
       <ParseForm client:load />
 
-      <section class="mt-20 w-full max-w-2xl">
-        <h2 class="mb-6 text-center text-xs font-medium uppercase tracking-widest text-slate-400 dark:text-slate-500">
+      <section class="mt-24 w-full max-w-xl animate-fade-in">
+        <h2 class="mb-8 text-center text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
           支持平台
         </h2>
         <PlatformShowcase client:visible />
       </section>
     </main>
 
-    <footer class="px-6 py-6 text-center text-xs text-slate-400 dark:text-slate-500">
+    <footer class="px-6 py-8 text-center text-xs leading-relaxed text-slate-400 dark:text-slate-500">
       <p>仅供学习交流，请尊重原创作者版权</p>
     </footer>
   </div>

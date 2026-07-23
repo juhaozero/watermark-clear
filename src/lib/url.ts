@@ -1,7 +1,7 @@
-import type { PlatformId } from './platforms';
+import type { DetectablePlatformId, PlatformId } from './platforms';
 
 /** 各平台常见分享域名，用于从混杂文本中识别链接 */
-const PLATFORM_DOMAINS: Record<PlatformId, RegExp[]> = {
+const PLATFORM_DOMAINS: Record<DetectablePlatformId, RegExp[]> = {
   douyin: [/v\.douyin\.com/i, /(?:www\.)?douyin\.com/i, /iesdouyin\.com/i],
   kuaishou: [/v\.kuaishou\.com/i, /(?:www\.)?kuaishou\.com/i, /chenzhongtech\.com/i],
   xiaohongshu: [/xhslink\.com/i, /(?:www\.)?xiaohongshu\.com/i, /xhs\.cn/i],
@@ -25,14 +25,14 @@ export function findUrlsInText(text: string): string[] {
   return matches.map(trimUrlTail);
 }
 
-function matchesPlatform(url: string, platform: PlatformId): boolean {
+function matchesPlatform(url: string, platform: DetectablePlatformId): boolean {
   return PLATFORM_DOMAINS[platform].some((re) => re.test(url));
 }
 
 /** 根据链接判断平台 */
-export function detectPlatformFromUrl(url: string): PlatformId | null {
+export function detectPlatformFromUrl(url: string): DetectablePlatformId | null {
   for (const [platform, patterns] of Object.entries(PLATFORM_DOMAINS) as [
-    PlatformId,
+    DetectablePlatformId,
     RegExp[],
   ][]) {
     if (patterns.some((re) => re.test(url))) return platform;
@@ -42,7 +42,7 @@ export function detectPlatformFromUrl(url: string): PlatformId | null {
 
 /**
  * 从分享文案中提取视频链接。
- * 若指定平台，优先返回匹配该平台的链接；否则返回第一个可识别平台的链接。
+ * 若指定具体平台，优先返回匹配该平台的链接；自动识别 / 未指定则返回第一个可识别平台的链接。
  */
 export function extractVideoUrl(text: string, platform?: PlatformId): string | null {
   const trimmed = text.trim();
@@ -54,7 +54,7 @@ export function extractVideoUrl(text: string, platform?: PlatformId): string | n
     return /^https?:\/\//i.test(trimmed) ? trimUrlTail(trimmed) : null;
   }
 
-  if (platform) {
+  if (platform && platform !== 'auto') {
     const matched = urls.find((u) => matchesPlatform(u, platform));
     if (matched) return matched;
   }

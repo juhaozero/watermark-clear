@@ -28,7 +28,7 @@ export default function ThemeToggle() {
       type="button"
       onClick={toggle}
       aria-label={theme === 'dark' ? '切换为浅色模式' : '切换为深色模式'}
-      className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition-colors duration-200 hover:border-slate-300 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white dark:focus-visible:ring-offset-slate-900"
+      className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-slate-200/80 bg-white/80 text-slate-600 shadow-soft transition-colors duration-200 hover:border-slate-300 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white dark:focus-visible:ring-offset-slate-900"
     >
       {theme === 'dark' ? (
         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">

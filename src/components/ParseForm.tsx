@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useState, type ClipboardEvent, type FormEvent, type MouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type MouseEvent, type ReactNode } from 'react';
 import {
   type ApiResponse,
+  type DownloadOptions,
   type VideoData,
   checkHealth,
+  downloadAsZip,
   downloadFile,
   formatCount,
   getApiBase,
   parseVideo,
 } from '../lib/api';
-import { PLATFORMS, PLATFORM_LABELS, type PlatformId } from '../lib/platforms';
+import { PLATFORMS, CONTENT_PLATFORMS, PLATFORM_LABELS, type PlatformId } from '../lib/platforms';
 import { detectPlatformFromUrl, extractVideoUrl } from '../lib/url';
 import PlatformIcon from './PlatformIcon';
 
@@ -18,20 +20,28 @@ function applyPastedShareText(
   setUrl: (url: string) => void,
   setPlatform: (id: PlatformId) => void,
 ) {
-  // 从文本中提取视频链接
   const extracted = extractVideoUrl(text, platform);
   if (!extracted) {
-    setUrl(text.trim()); // 如果提取失败，则设置为文本的原始值
+    setUrl(text.trim());
     return;
   }
-  console.log('提取到的链接:', extracted);
   setUrl(extracted);
+  // 自动识别模式下保持选中，不强制切换到具体平台
+  if (platform === 'auto') return;
   const detected = detectPlatformFromUrl(extracted);
   if (detected) setPlatform(detected);
 }
 
 function platformLabel(id: string): string {
   return PLATFORM_LABELS[id] ?? id;
+}
+
+function resolvePlatformForParse(url: string, selected: PlatformId): PlatformId {
+  if (selected === 'auto') return 'auto';
+  const detected = detectPlatformFromUrl(url);
+  // 链接明显属于其他平台时，纠正 endpoint，避免打错接口
+  if (detected && detected !== selected) return detected;
+  return selected;
 }
 
 function DownloadIcon() {
@@ -70,8 +80,8 @@ function DownloadButton({
     setError(null);
     try {
       await downloadFile({ url, filename });
-    } catch {
-      setError('下载失败');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '下载失败');
     } finally {
       setLoading(false);
     }
@@ -79,15 +89,15 @@ function DownloadButton({
 
   const className =
     variant === 'outline'
-      ? 'inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors duration-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700'
+      ? 'inline-flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors duration-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700'
       : variant === 'overlay'
-        ? 'inline-flex cursor-pointer items-center gap-1 rounded-md bg-white/95 px-2 py-1 text-xs font-medium text-slate-800 shadow-sm backdrop-blur-sm transition-colors duration-200 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60'
-        : 'inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 dark:focus-visible:ring-offset-slate-900';
+        ? 'inline-flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 text-xs font-medium text-slate-800 shadow-sm backdrop-blur-sm transition-colors duration-200 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60'
+        : 'inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 dark:focus-visible:ring-offset-slate-900';
 
   const iconClass = variant === 'overlay' ? 'h-3.5 w-3.5' : 'h-4 w-4';
 
   return (
-    <div className="inline-flex flex-col gap-1">
+    <div className="inline-flex shrink-0 flex-col gap-1">
       <button
         type="button"
         onClick={handleClick}
@@ -112,46 +122,51 @@ function DownloadButton({
   );
 }
 
-function DownloadAllImagesButton({ images, title }: { images: string[]; title: string }) {
+function ZipDownloadButton({
+  files,
+  zipName,
+  label = '打包下载',
+  variant = 'outline',
+}: {
+  files: DownloadOptions[];
+  zipName: string;
+  label?: string;
+  variant?: 'primary' | 'outline';
+}) {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  if (files.length === 0) return null;
 
   const handleClick = async () => {
     setLoading(true);
     setError(null);
     setProgress(0);
-    let failed = 0;
     try {
-      for (let i = 0; i < images.length; i++) {
-        try {
-          await downloadFile({
-            url: images[i],
-            filename: buildDownloadFilename(title, String(i + 1)),
-          });
-        } catch {
-          failed += 1;
-        }
-        setProgress(i + 1);
-        // 避免浏览器连续触发下载被拦截
-        if (i < images.length - 1) {
-          await new Promise((r) => setTimeout(r, 400));
-        }
+      const result = await downloadAsZip({
+        files,
+        zipName,
+        onProgress: (done) => setProgress(done),
+      });
+      if (result.failed > 0) {
+        setError(`已打包 ${result.ok} 个，${result.failed} 个失败`);
       }
-      if (failed > 0) setError(`${failed} 张下载失败`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '打包下载失败');
     } finally {
       setLoading(false);
     }
   };
 
+  const className =
+    variant === 'primary'
+      ? 'inline-flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 dark:focus-visible:ring-offset-slate-900'
+      : 'inline-flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors duration-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700';
+
   return (
-    <div className="inline-flex flex-col gap-1">
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={loading}
-        className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors duration-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
-      >
+    <div className="inline-flex shrink-0 flex-col gap-1">
+      <button type="button" onClick={handleClick} disabled={loading} className={className}>
         {loading ? (
           <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -160,7 +175,7 @@ function DownloadAllImagesButton({ images, title }: { images: string[]; title: s
         ) : (
           <DownloadIcon />
         )}
-        {loading ? `下载中 ${progress}/${images.length}` : '全部下载'}
+        {loading ? `打包中 ${progress}/${files.length}` : label}
       </button>
       {error && <span className="text-xs text-red-500">{error}</span>}
     </div>
@@ -212,6 +227,27 @@ function ResultCard({ data }: { data: VideoData }) {
   ];
   const multiDownload = downloads.length > 1;
   const hasMeta = Boolean(data.author?.name || data.stats);
+  const imageFiles: DownloadOptions[] =
+    data.images?.map((url, i) => ({
+      url,
+      filename: buildDownloadFilename(title, String(i + 1)),
+    })) ?? [];
+  const videoZipFiles: DownloadOptions[] = downloads.map((d) => ({
+    url: d.url,
+    filename: buildDownloadFilename(title, multiDownload ? d.label : undefined),
+  }));
+  const partZipFiles: DownloadOptions[] =
+    data.parts
+      ?.filter((p): p is typeof p & { url: string } => Boolean(p.url))
+      .map((p, i) => ({
+        url: p.url,
+        filename: buildDownloadFilename(title, p.title ?? `P${i + 1}`),
+      })) ?? [];
+  const livePhotoFiles: DownloadOptions[] =
+    data.live_photo?.map((url, i) => ({
+      url,
+      filename: buildDownloadFilename(title, `live_${i + 1}`),
+    })) ?? [];
 
   return (
     <article className="animate-fade-in overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/50 dark:border-slate-700/80 dark:bg-slate-800/50 dark:shadow-none">
@@ -230,7 +266,7 @@ function ResultCard({ data }: { data: VideoData }) {
         )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-500/10 dark:text-sky-400">
               <PlatformIcon id={data.platform} size={14} />
               {platformLabel(data.platform)}
             </span>
@@ -293,6 +329,13 @@ function ResultCard({ data }: { data: VideoData }) {
                 filename={buildDownloadFilename(title, multiDownload ? d.label : undefined)}
               />
             ))}
+            {videoZipFiles.length > 1 && (
+              <ZipDownloadButton
+                files={videoZipFiles}
+                zipName={buildDownloadFilename(title, 'videos')}
+                label="打包下载"
+              />
+            )}
           </div>
         </ResultSection>
       )}
@@ -313,20 +356,36 @@ function ResultCard({ data }: { data: VideoData }) {
 
       {data.parts && data.parts.length > 0 && (
         <ResultSection title="分 P 列表" tone="muted">
+          {partZipFiles.length > 1 && (
+            <div className="mb-3.5">
+              <ZipDownloadButton
+                files={partZipFiles}
+                zipName={buildDownloadFilename(title, 'parts')}
+                label="打包下载全部分 P"
+              />
+            </div>
+          )}
           <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-100 dark:divide-slate-700/80 dark:border-slate-700/80">
             {data.parts.map((part, i) => (
-              <li key={part.url ?? i}>
-                <a
-                  href={part.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-slate-700 transition-colors duration-200 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700/40"
-                >
-                  <span className="truncate">{part.title ?? `P${i + 1}`}</span>
-                  <span className="shrink-0 text-slate-400">
-                    <ExternalIcon />
-                  </span>
-                </a>
+              <li key={part.url ?? `part-${i}`}>
+                {part.url ? (
+                  <a
+                    href={part.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-slate-700 transition-colors duration-200 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700/40"
+                  >
+                    <span className="truncate">{part.title ?? `P${i + 1}`}</span>
+                    <span className="shrink-0 text-slate-400">
+                      <ExternalIcon />
+                    </span>
+                  </a>
+                ) : (
+                  <div className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-slate-400 dark:text-slate-500">
+                    <span className="truncate">{part.title ?? `P${i + 1}`}</span>
+                    <span className="shrink-0 text-xs">暂无地址</span>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -335,14 +394,20 @@ function ResultCard({ data }: { data: VideoData }) {
 
       {data.images && data.images.length > 0 && (
         <ResultSection title={`图集 · ${data.images.length}`} tone="muted">
-          <div className="mb-3.5">
-            <DownloadAllImagesButton images={data.images} title={title} />
-          </div>
-          <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 sm:gap-3">
+          {imageFiles.length > 1 && (
+            <div className="mb-3.5">
+              <ZipDownloadButton
+                files={imageFiles}
+                zipName={buildDownloadFilename(title, 'images')}
+                label="打包下载图集"
+              />
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4">
             {data.images.map((src, i) => (
               <div
-                key={src}
-                className="group relative aspect-square overflow-hidden rounded-xl bg-slate-100 ring-1 ring-slate-200/60 dark:bg-slate-700 dark:ring-slate-600/40"
+                key={`${src}-${i}`}
+                className="group relative aspect-[3/4] overflow-hidden rounded-2xl bg-slate-100 ring-1 ring-slate-200/60 dark:bg-slate-700 dark:ring-slate-600/40"
               >
                 <a
                   href={src}
@@ -358,7 +423,7 @@ function ResultCard({ data }: { data: VideoData }) {
                     loading="lazy"
                   />
                 </a>
-                <div className="absolute inset-x-0 bottom-0 flex justify-end bg-gradient-to-t from-black/55 to-transparent p-2 opacity-100 transition-opacity duration-200 sm:opacity-0 sm:group-hover:opacity-100">
+                <div className="absolute inset-x-0 bottom-0 flex justify-end bg-gradient-to-t from-black/55 to-transparent p-2.5 opacity-100 transition-opacity duration-200 sm:opacity-0 sm:group-hover:opacity-100">
                   <DownloadButton
                     url={src}
                     label="下载"
@@ -373,10 +438,35 @@ function ResultCard({ data }: { data: VideoData }) {
         </ResultSection>
       )}
 
+      {livePhotoFiles.length > 0 && (
+        <ResultSection title={`实况图 · ${livePhotoFiles.length}`} tone="muted">
+          {livePhotoFiles.length > 1 && (
+            <div className="mb-3.5">
+              <ZipDownloadButton
+                files={livePhotoFiles}
+                zipName={buildDownloadFilename(title, 'live')}
+                label="打包下载实况"
+              />
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2.5">
+            {livePhotoFiles.map((f, i) => (
+              <DownloadButton
+                key={`${f.url}-${i}`}
+                url={f.url}
+                label={`实况 ${i + 1}`}
+                filename={f.filename ?? buildDownloadFilename(title, `live_${i + 1}`)}
+                variant="outline"
+              />
+            ))}
+          </div>
+        </ResultSection>
+      )}
+
       {data.music?.url && (
         <ResultSection title="背景音乐" tone="muted">
-          <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3.5 dark:border-slate-700/80 dark:bg-slate-900/40">
-            <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3.5 dark:border-slate-700/80 dark:bg-slate-900/40 sm:flex-nowrap sm:justify-between sm:gap-4">
+            <div className="min-w-0 flex-1 basis-full sm:basis-auto">
               <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
                 {data.music.title ?? '未知曲目'}
               </p>
@@ -400,24 +490,26 @@ function ResultCard({ data }: { data: VideoData }) {
 }
 
 export default function ParseForm() {
-  const [platform, setPlatform] = useState<PlatformId>('douyin');
+  const [platform, setPlatform] = useState<PlatformId>('auto');
   const [url, setUrl] = useState('');
   const [cookie, setCookie] = useState('');
-  const [apiKey, setApiKey] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pasteHint, setPasteHint] = useState<string | null>(null);
   const [result, setResult] = useState<VideoData | null>(null);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     checkHealth().then(setApiOnline);
   }, []);
 
   const handleSubmit = useCallback(
-    async (e: FormEvent) => {
+    async (e: { preventDefault(): void }) => {
       e.preventDefault();
       setError(null);
+      setPasteHint(null);
       setResult(null);
 
       const extracted = extractVideoUrl(url, platform);
@@ -426,38 +518,65 @@ export default function ParseForm() {
         return;
       }
 
-      const selected = PLATFORMS.find((p) => p.id === platform)!;
+      const resolvedId = resolvePlatformForParse(extracted, platform);
+      const selected = PLATFORMS.find((p) => p.id === resolvedId);
+      if (!selected) {
+        setError('不支持的平台');
+        return;
+      }
+      if (resolvedId !== platform && resolvedId !== 'auto') {
+        setPlatform(resolvedId);
+      }
       if (extracted !== url.trim()) setUrl(extracted);
 
+      const requestId = ++requestIdRef.current;
       setLoading(true);
 
       try {
         const res: ApiResponse = await parseVideo({
           url: extracted,
           endpoint: selected.endpoint,
+          method: selected.method,
           cookie: cookie || undefined,
         });
+
+        if (requestId !== requestIdRef.current) return;
 
         if (res.code === 200 && res.data) {
           setResult(res.data);
         } else {
           setError(res.msg || '解析失败，请检查链接后重试');
         }
-      } catch {
-        setError(`无法连接 API 服务，请确认后端已启动`);
+      } catch (err) {
+        if (requestId !== requestIdRef.current) return;
+        const code = err instanceof Error ? err.message : '';
+        if (code === 'NETWORK') {
+          setError('无法连接 API 服务，请确认后端已启动');
+        } else if (code === 'INVALID_JSON' || code.startsWith('HTTP_')) {
+          setError('服务返回异常，请稍后重试');
+        } else {
+          setError('解析失败，请稍后重试');
+        }
       } finally {
-        setLoading(false);
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+        }
       }
     },
-    [url, platform, cookie, apiKey],
+    [url, platform, cookie],
   );
 
   const handlePaste = useCallback(async () => {
+    setPasteHint(null);
     try {
       const text = await navigator.clipboard.readText();
-      if (text) applyPastedShareText(text, platform, setUrl, setPlatform);
+      if (text) {
+        applyPastedShareText(text, platform, setUrl, setPlatform);
+      } else {
+        setPasteHint('剪贴板为空');
+      }
     } catch {
-      /* clipboard denied */
+      setPasteHint('无法读取剪贴板，请手动粘贴或授权剪贴板权限');
     }
   }, [platform]);
 
@@ -466,38 +585,72 @@ export default function ParseForm() {
       const text = e.clipboardData.getData('text');
       if (!text) return;
       e.preventDefault();
+      setPasteHint(null);
       applyPastedShareText(text, platform, setUrl, setPlatform);
     },
     [platform],
   );
 
   return (
-    <div className="w-full min-w-0 max-w-2xl space-y-10">
-      {/* Platform filter */}
-      <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="选择平台">
-        {PLATFORMS.map((p) => {
-          const selected = platform === p.id;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => setPlatform(p.id)}
-              aria-pressed={selected}
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 ${
-                selected
-                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                  : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:ring-slate-600'
-              }`}
-            >
-              <PlatformIcon id={p.id} size={16} />
-              {p.label}
-            </button>
-          );
-        })}
+    <div className="w-full min-w-0 max-w-xl space-y-9 animate-fade-in">
+      {/* Platform picker — 自动识别为主，具体平台疏朗网格 */}
+      <div className="space-y-5" role="group" aria-label="选择平台">
+        <button
+          type="button"
+          onClick={() => setPlatform('auto')}
+          aria-pressed={platform === 'auto'}
+          className={`flex w-full cursor-pointer items-center justify-center gap-2.5 rounded-2xl px-5 py-3.5 text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 ${
+            platform === 'auto'
+              ? 'bg-slate-900 text-white shadow-soft dark:bg-white dark:text-slate-900'
+              : 'bg-white/80 text-slate-600 ring-1 ring-slate-200/80 hover:bg-white hover:text-slate-900 hover:ring-slate-300 dark:bg-slate-800/60 dark:text-slate-300 dark:ring-slate-700/80 dark:hover:bg-slate-800 dark:hover:text-white'
+          }`}
+        >
+          <PlatformIcon id="auto" size={18} />
+          <span>自动识别</span>
+          <span
+            className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium tracking-wide ${
+              platform === 'auto'
+                ? 'bg-white/15 text-white/80 dark:bg-slate-900/10 dark:text-slate-600'
+                : 'bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-400'
+            }`}
+          >
+            推荐
+          </span>
+        </button>
+
+        <div className="flex items-center gap-3" aria-hidden="true">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-200 to-transparent dark:via-slate-700" />
+          <span className="shrink-0 text-[11px] font-medium tracking-[0.14em] text-slate-400 dark:text-slate-500">
+            或指定平台
+          </span>
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-200 to-transparent dark:via-slate-700" />
+        </div>
+
+        <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+          {CONTENT_PLATFORMS.map((p) => {
+            const selected = platform === p.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setPlatform(p.id)}
+                aria-pressed={selected}
+                className={`flex cursor-pointer flex-col items-center gap-2 rounded-2xl px-2 py-3.5 text-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 sm:py-4 ${
+                  selected
+                    ? 'bg-slate-900 text-white shadow-soft dark:bg-white dark:text-slate-900'
+                    : 'bg-white/70 text-slate-600 ring-1 ring-slate-200/70 hover:bg-white hover:text-slate-900 hover:ring-slate-300 dark:bg-slate-800/50 dark:text-slate-300 dark:ring-slate-700/70 dark:hover:bg-slate-800 dark:hover:text-white'
+                }`}
+              >
+                <PlatformIcon id={p.id} size={22} />
+                <span className="text-xs font-medium leading-none">{p.label === '哔哩哔哩' ? 'B站' : p.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-3.5">
         <div className="relative">
           <label htmlFor="video-url" className="sr-only">
             视频链接
@@ -512,22 +665,42 @@ export default function ParseForm() {
             onPaste={handleInputPaste}
             disabled={loading}
             autoComplete="off"
-            className="w-full rounded-2xl border border-slate-200 bg-white py-4 pl-5 pr-24 text-base text-slate-900 placeholder:text-slate-400 transition-colors duration-200 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-blue-400"
+            className={`w-full rounded-2xl border border-slate-200/90 bg-white/90 py-4 pl-5 text-base text-slate-900 shadow-soft placeholder:text-slate-400 transition-all duration-200 focus:border-sky-400 focus:outline-none focus:ring-4 focus:ring-sky-500/10 disabled:opacity-60 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-sky-500 ${
+              url.trim() ? 'pr-32' : 'pr-20'
+            }`}
           />
-          <button
-            type="button"
-            onClick={handlePaste}
-            disabled={loading}
-            className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium text-slate-500 transition-colors duration-200 hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-          >
-            粘贴
-          </button>
+          <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+            {url.trim() && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUrl('');
+                  setError(null);
+                  setPasteHint(null);
+                  setResult(null);
+                }}
+                disabled={loading}
+                aria-label="清空输入"
+                className="cursor-pointer rounded-xl px-2.5 py-1.5 text-sm font-medium text-slate-400 transition-colors duration-200 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+              >
+                清空
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handlePaste}
+              disabled={loading}
+              className="cursor-pointer rounded-xl px-3 py-1.5 text-sm font-medium text-slate-500 transition-colors duration-200 hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+            >
+              粘贴
+            </button>
+          </div>
         </div>
 
         <button
           type="submit"
           disabled={loading || !url.trim()}
-          className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-blue-500 py-4 text-base font-semibold text-white transition-colors duration-200 hover:bg-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:ring-offset-slate-900"
+          className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-sky-500 py-4 text-base font-semibold text-white shadow-soft transition-colors duration-200 hover:bg-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 dark:focus-visible:ring-offset-slate-900"
         >
           {loading ? (
             <>
@@ -547,14 +720,14 @@ export default function ParseForm() {
             type="button"
             onClick={() => setShowAdvanced((v) => !v)}
             aria-expanded={showAdvanced}
-            className="cursor-pointer text-sm text-slate-500 transition-colors duration-200 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:text-slate-400 dark:hover:text-slate-200 dark:focus-visible:ring-offset-slate-900"
+            className="cursor-pointer text-sm text-slate-400 transition-colors duration-200 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:text-slate-500 dark:hover:text-slate-300 dark:focus-visible:ring-offset-slate-900"
           >
             {showAdvanced ? '收起高级选项' : '高级选项'}
           </button>
           {showAdvanced && (
             <div className="mt-3 space-y-3 animate-fade-in">
               <div>
-                <label htmlFor="cookie" className="mb-1 block text-sm text-slate-600 dark:text-slate-400">
+                <label htmlFor="cookie" className="mb-1.5 block text-sm text-slate-500 dark:text-slate-400">
                   Cookie（可选，提高解析成功率）
                 </label>
                 <textarea
@@ -564,24 +737,9 @@ export default function ParseForm() {
                   onChange={(e) => setCookie(e.target.value)}
                   disabled={loading}
                   placeholder="平台登录 Cookie"
-                  className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-500"
+                  className="w-full resize-none rounded-xl border border-slate-200 bg-white/90 px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-4 focus:ring-sky-500/10 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-500"
                 />
               </div>
-              {/* <div>
-                <label htmlFor="api-key" className="mb-1 block text-sm text-slate-600 dark:text-slate-400">
-                  API Key（可选）
-                </label>
-                <input
-                  id="api-key"
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  disabled={loading}
-                  placeholder="X-API-Key"
-                  autoComplete="off"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-500"
-                />
-              </div> */}
             </div>
           )}
         </div>
@@ -591,6 +749,12 @@ export default function ParseForm() {
       {apiOnline === false && (
         <p className="w-full max-w-full break-words rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
           API 服务未响应（{getApiBase()}），请先启动后端服务
+        </p>
+      )}
+
+      {pasteHint && (
+        <p className="w-full max-w-full break-words rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-600 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+          {pasteHint}
         </p>
       )}
 
