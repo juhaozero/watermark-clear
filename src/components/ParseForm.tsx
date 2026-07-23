@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ClipboardEvent, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ClipboardEvent, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import {
   type ApiResponse,
   type VideoData,
@@ -52,16 +52,20 @@ function DownloadButton({
   label,
   filename,
   variant = 'primary',
+  ariaLabel,
 }: {
   url: string;
   label: string;
   filename: string;
-  variant?: 'primary' | 'outline';
+  variant?: 'primary' | 'outline' | 'overlay';
+  ariaLabel?: string;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleClick = async () => {
+  const handleClick = async (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     setLoading(true);
     setError(null);
     try {
@@ -76,27 +80,89 @@ function DownloadButton({
   const className =
     variant === 'outline'
       ? 'inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors duration-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700'
-      : 'inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 dark:focus-visible:ring-offset-slate-900';
+      : variant === 'overlay'
+        ? 'inline-flex cursor-pointer items-center gap-1 rounded-md bg-white/95 px-2 py-1 text-xs font-medium text-slate-800 shadow-sm backdrop-blur-sm transition-colors duration-200 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60'
+        : 'inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 dark:focus-visible:ring-offset-slate-900';
+
+  const iconClass = variant === 'overlay' ? 'h-3.5 w-3.5' : 'h-4 w-4';
 
   return (
     <div className="inline-flex flex-col gap-1">
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={loading}
-      className={className}
-    >
-      {loading ? (
-        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-        </svg>
-      ) : (
-        <DownloadIcon />
-      )}
-      {loading ? '下载中…' : label}
-    </button>
-    {error && <span className="text-xs text-red-500">{error}</span>}
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={loading}
+        className={className}
+        aria-label={ariaLabel}
+      >
+        {loading ? (
+          <svg className={`${iconClass} animate-spin`} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        ) : (
+          <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12M12 16.5V3" />
+          </svg>
+        )}
+        {loading ? (variant === 'overlay' ? '' : '下载中…') : label}
+      </button>
+      {error && <span className="text-xs text-red-500">{error}</span>}
+    </div>
+  );
+}
+
+function DownloadAllImagesButton({ images, title }: { images: string[]; title: string }) {
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleClick = async () => {
+    setLoading(true);
+    setError(null);
+    setProgress(0);
+    let failed = 0;
+    try {
+      for (let i = 0; i < images.length; i++) {
+        try {
+          await downloadFile({
+            url: images[i],
+            filename: buildDownloadFilename(title, String(i + 1)),
+          });
+        } catch {
+          failed += 1;
+        }
+        setProgress(i + 1);
+        // 避免浏览器连续触发下载被拦截
+        if (i < images.length - 1) {
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+      if (failed > 0) setError(`${failed} 张下载失败`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="inline-flex flex-col gap-1">
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={loading}
+        className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors duration-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+      >
+        {loading ? (
+          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        ) : (
+          <DownloadIcon />
+        )}
+        {loading ? `下载中 ${progress}/${images.length}` : '全部下载'}
+      </button>
+      {error && <span className="text-xs text-red-500">{error}</span>}
     </div>
   );
 }
@@ -269,23 +335,39 @@ function ResultCard({ data }: { data: VideoData }) {
 
       {data.images && data.images.length > 0 && (
         <ResultSection title={`图集 · ${data.images.length}`} tone="muted">
+          <div className="mb-3.5">
+            <DownloadAllImagesButton images={data.images} title={title} />
+          </div>
           <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 sm:gap-3">
             {data.images.map((src, i) => (
-              <a
+              <div
                 key={src}
-                href={src}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group relative aspect-square cursor-pointer overflow-hidden rounded-xl bg-slate-100 ring-1 ring-slate-200/60 transition-transform duration-200 hover:scale-[1.02] dark:bg-slate-700 dark:ring-slate-600/40"
+                className="group relative aspect-square overflow-hidden rounded-xl bg-slate-100 ring-1 ring-slate-200/60 dark:bg-slate-700 dark:ring-slate-600/40"
               >
-                <img
-                  src={src}
-                  referrerPolicy="no-referrer"
-                  alt={`图集第 ${i + 1} 张`}
-                  className="h-full w-full object-cover transition-opacity duration-200 group-hover:opacity-80"
-                  loading="lazy"
-                />
-              </a>
+                <a
+                  href={src}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block h-full w-full cursor-pointer transition-transform duration-200 group-hover:scale-[1.02]"
+                >
+                  <img
+                    src={src}
+                    referrerPolicy="no-referrer"
+                    alt={`图集第 ${i + 1} 张`}
+                    className="h-full w-full object-cover transition-opacity duration-200 group-hover:opacity-80"
+                    loading="lazy"
+                  />
+                </a>
+                <div className="absolute inset-x-0 bottom-0 flex justify-end bg-gradient-to-t from-black/55 to-transparent p-2 opacity-100 transition-opacity duration-200 sm:opacity-0 sm:group-hover:opacity-100">
+                  <DownloadButton
+                    url={src}
+                    label="下载"
+                    filename={buildDownloadFilename(title, String(i + 1))}
+                    variant="overlay"
+                    ariaLabel={`下载第 ${i + 1} 张`}
+                  />
+                </div>
+              </div>
             ))}
           </div>
         </ResultSection>
